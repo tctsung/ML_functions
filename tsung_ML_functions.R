@@ -38,6 +38,8 @@ data_partition <- function(data, y, seed=1, prop=0.7, stratified=FALSE, list=TRU
 
 # 2. dummy coding for factor columns
 # :param data: data frame for dummy coding, only factor will be modified
+# :param except: vector, the cols that we don't want to do dummy coding. 
+#                If numeric -> read as index, if chr -> read as colname
 # :return new_data: data.frame with no factors
 dummy_coding <- function(data, except){
   invisible(sapply(c("dplyr", "purrr"), require, character.only=TRUE))  # load packages without printing
@@ -81,9 +83,9 @@ normal_colnames <- function(data, replace_by_dash=FALSE){
 }
 
 # 4. 
-auto_dtype_change <- function(data, chr_to_fct=TRUE, fct_still_fct=TRUE,fct_threshold=Inf, date_to_num=TRUE){
+auto_dtype_change <- function(data, chr_to_fct=TRUE, fct_still_fct=TRUE,fct_threshold=Inf, date_to_num=TRUE, drop_chr=TRUE){
   invisible(sapply(c("dplyr", "purrr"), require, character.only=TRUE))  # load packages without printing
-  dtypes <- data %>% map_chr(class)
+  dtypes <- apply(data,2,class)
   date_nms <- colnames(data)[which(dtypes == "Date")]
   if (!fct_still_fct) {  # if fct_still_fct=F, check the category count of factor columns
     cat_idx <- which(dtypes %in% c("character","factor"))
@@ -91,38 +93,58 @@ auto_dtype_change <- function(data, chr_to_fct=TRUE, fct_still_fct=TRUE,fct_thre
     cat_idx <- which(dtypes=="character")
   }
   class_cnt <- apply(data[,cat_idx],2,function(x) length(unique(x)))  # count of unique classes in each category var
-  chr_nms <- colnames(data)[cat_idx][class_cnt<fct_threshold]
+  cat_nms <- colnames(data)[cat_idx][class_cnt<fct_threshold]
+  chr_nms <- colnames(data)[cat_idx][class_cnt>fct_threshold]
   data <- data %>%
     mutate_at(vars(all_of(date_nms)), as.numeric) %>%  # turn date to numeric
-    mutate_at(vars(all_of(chr_nms)), as.factor)        # turn characters to factor
+    mutate_at(vars(all_of(cat_nms)), as.factor) %>%    # turn characters to factor
+    {if (drop_chr) select(., !all_of(chr_nms))}        # drop chr cols
   return(data)
 }
 
 # 5. normalize numeric variables but not dummy variables
-data_normalize <- function(data, outcome_idx, outcome_name){
+data_normalize <- function(data, except){
   # normalize the numeric variables
   # won't change the value of factors & dummy variables
   # if the outcome is numeric, must provide outcome_idx or outcome_name to avoid normalization of outcome
   invisible(sapply(c("dplyr", "purrr"), require, character.only=TRUE))  # load packages without printing
-  col_nms <- colnames(data)
-  dtypes <- data %>% map_chr(class)
-  # 把outcome分出來, 其他normalize
-  if (outcome_idx) outcome_name <- col_nms[outcome_idx]   # get outcome name by outcome index
-  if (outcome_name) {
-    data <- data %>%
-      select()
-  }
-  apply(data,2,function(col){
-    if ((class(col[1])==numeric) & (sort(unique(col))==c(0,1))){
-      col <- scale(col)      
+  if (typeof(except)=="character"){
+      data_freeze <- data %>% dplyr::select(all_of(except))
+      data <- data %>% dplyr::select(!all_of(except))
+    } else if(typeof(except) == "double"){
+      data_freeze <- data[,except]
+      data <- data[,-except]
+      }
+  data <- apply(data,2,function(col){
+    uq <- sort(unique(col))
+    if ((class(col[1])=="numeric") && (uq[1]!=0 | uq[2]!=1)){
+      scale(col)      
     } else {
       col
     }
     
   })
-  
+  data <- cbind(data_freeze, data.frame(data))
+  return(data)
+}
+
+# 6. check number of unique values in each cols:
+unique_count <- function(data){
+  invisible(sapply(c("dplyr", "DT"), require, character.only=TRUE))
+  classes <- apply(data,2,class) 
+  counts <- apply(data,2,function(x) length(unique(x)))
+  examples <- sapply(apply(data,2,function(x) head(unique(x), 10)),  # keep the first 10 unique values as example
+                     function(x) paste(x, collapse = ","))           # combine the vals into one
+  output <- data.frame(class = classes, 
+                       unique_count = counts,
+                       values = examples
+             ) %>% arrange(desc(counts))
+  return(datatable(output))
   
 }
+
+
+
 
 # 7. result tables (accuracy, ....)
 

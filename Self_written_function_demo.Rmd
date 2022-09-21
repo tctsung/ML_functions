@@ -1,0 +1,35 @@
+---
+title: "Self_written_function_demo"
+author: "Ching-Tsung_Deron_Tsai"
+date: "2022/9/21"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r packages}
+library(tidyverse)  
+source("tsung_ML_functions.R")
+```
+
+
+### Data cleaning
+
+```{r }
+data(ahp, package = "r02pro")
+# raw <- data.frame(ahp[,apply(ahp,2,function(x) sum(is.na(x))==0)])
+raw <- ahp
+rapply(raw,class) %>% table()   # check the classes
+unique_count(raw)   # check unique count in diff classes to decide threshold for factor dtype changing
+# -> set threshold as 10
+data <- raw %>%
+  auto_dtype_change(chr_to_fct = T, fct_still_fct = T, date_to_num = T, 
+                    fct_threshold = 10, drop_chr = T) %>%
+  dummy_coding(except = "gar_fin") %>%   # except could be a outcome variable that we don't want to modify
+  data_normalize(except = 1)             # except argument can also be col idx
+str(data)
+```
+
+
