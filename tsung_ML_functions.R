@@ -4,8 +4,9 @@
 # 1. data_partition
 # 2. dummy_coding
 # 3. normal_colnames
-# 4. auto_dtype_change
+# 4. auto_dtype_change: drop_chr has bug
 # 5. data_normalize
+# 6. unique_count
 
 
 # 1. This function split data to training and testing set
@@ -22,7 +23,7 @@ data_partition <- function(data, y, seed=1, prop=0.7, stratified=FALSE, list=TRU
   set.seed(seed)
   if (stratified){
     k <- sort(unique(y))
-    idx <- foreach(j = k, .combine = c) %do%      # combine the idx of diff classes
+    idx <- foreach(j = 1:k, .combine = c) %dopar%      # combine the idx of diff classes
       sample(which(y == j),floor(sum(y == j)*prop)) # stratified sampling
   } else {
     idx <- sample(1:nrow(data), floor(nrow(data)*prop))
@@ -41,8 +42,9 @@ data_partition <- function(data, y, seed=1, prop=0.7, stratified=FALSE, list=TRU
 # :param except: vector, the cols that we don't want to do dummy coding. 
 #                If numeric -> read as index, if chr -> read as colname
 # :return new_data: data.frame with no factors
-dummy_coding <- function(data, except){
+dummy_coding <- function(data, except=NULL){
   invisible(sapply(c("dplyr", "purrr"), require, character.only=TRUE))  # load packages without printing
+  
   if (typeof(except)=="character"){
     data_freeze = data %>% dplyr::select(all_of(except))
     data = data %>% dplyr::select(!all_of(except))
@@ -64,8 +66,8 @@ dummy_coding <- function(data, except){
     colnames(col_lst[[i]]) <- paste0(names(col_lst)[i], "_", colnames(col_lst[[i]]))
     new_data <- cbind(new_data, col_lst[[i]])
   }
-  new_data <- cbind(data_freeze, new_data)
-  return(new_data)
+  if (!is.null(data_freeze)) new_data <- cbind(data_freeze, new_data)
+  return(data.frame(new_data))
 }
 
 # 3. remove symbols in column names
@@ -98,16 +100,17 @@ auto_dtype_change <- function(data, chr_to_fct=TRUE, fct_still_fct=TRUE,fct_thre
   data <- data %>%
     mutate_at(vars(all_of(date_nms)), as.numeric) %>%  # turn date to numeric
     mutate_at(vars(all_of(cat_nms)), as.factor) %>%    # turn characters to factor
-    {if (drop_chr) select(., !all_of(chr_nms))}        # drop chr cols
+    {if (drop_chr) select(., !all_of(chr_nms))}        # drop chr cols, 這裡有BUG
   return(data)
 }
 
 # 5. normalize numeric variables but not dummy variables
-data_normalize <- function(data, except){
+data_normalize <- function(data, except=NULL){
   # normalize the numeric variables
   # won't change the value of factors & dummy variables
   # if the outcome is numeric, must provide outcome_idx or outcome_name to avoid normalization of outcome
   invisible(sapply(c("dplyr", "purrr"), require, character.only=TRUE))  # load packages without printing
+  data_freeze <- NULL
   if (typeof(except)=="character"){
       data_freeze <- data %>% dplyr::select(all_of(except))
       data <- data %>% dplyr::select(!all_of(except))
@@ -124,7 +127,7 @@ data_normalize <- function(data, except){
     }
     
   })
-  data <- cbind(data_freeze, data.frame(data))
+  if (!is.null(data_freeze)) data <- cbind(data_freeze, data.frame(data))
   return(data)
 }
 
