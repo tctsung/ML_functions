@@ -44,18 +44,14 @@ data_partition <- function(data, y, seed=1, prop=0.7, stratified=FALSE, list=TRU
 # :return new_data: data.frame with no factors
 dummy_coding <- function(data, except=NULL){
   invisible(sapply(c("dplyr", "purrr"), require, character.only=TRUE))  # load packages without printing
-  
-  if (typeof(except)=="character"){
-    data_freeze = data %>% dplyr::select(all_of(except))
-    data = data %>% dplyr::select(!all_of(except))
-  } else if(typeof(except) == "double"){
-    data_freeze = data[,except]
-    data = data[,-except]
-  }
-  # split the cols into factors & non-factors:
-  factor_col <- data %>% map_lgl(function(x) class(x)=="factor")  # bool that report factor cols
-  new_data <- data[,!factor_col]
-  factors <- data[,factor_col]
+  ori_nms <- colnames(data)  # original colnames
+  dtypes <- sapply(data,class)
+  if (typeof(except)=="double" && all.equal(except,round(except))) except <- ori_nms[except]
+  not_factors <- union(ori_nms[dtypes!="factor"], except)
+  lst <- sep_freeze(data = data,except = not_factors) # split the cols into factors & non-factors & except
+  factors <- lst$check ; freeze <- lst$freeze
+  freeze <- data.frame(1:nrow(factors)) %>%      # add a redundant col to avoid cbind with null
+    {if (!is.null(freeze)) bind_cols(.,freeze)}
   # apply dummy coding on all factor cols:
   col_lst <- apply(factors, 2, function(col){  
     vals <- sort(unique(col))                  # get the unique value within col
@@ -64,10 +60,9 @@ dummy_coding <- function(data, except=NULL){
   # change the col names:
   for (i in 1:length(col_lst)){
     colnames(col_lst[[i]]) <- paste0(names(col_lst)[i], "_", colnames(col_lst[[i]]))
-    new_data <- cbind(new_data, col_lst[[i]])
+    freeze <- cbind(freeze, col_lst[[i]])
   }
-  if (!is.null(data_freeze)) new_data <- cbind(data_freeze, new_data)
-  return(data.frame(new_data))
+  return(data.frame(freeze[,-1]))
 }
 
 # 3. remove symbols in column names
@@ -92,28 +87,20 @@ auto_dtype_change <- function(data, except=NULL, fct_threshold=10, date_to_num=T
   # :param date_to_num: bool, if T transform date dtype to numeric
   invisible(sapply(c("dplyr", "purrr"), require, character.only=TRUE))  # load packages without printing
   ori_nms <- colnames(data)  # original colnames
-  if (typeof(except)=="character"){
-    freeze <- data %>% dplyr::select(all_of(except))
-    check <- data %>% dplyr::select(!all_of(except))
-  } else if (typeof(except)=="double" && all.equal(except,round(except))){ # check integer
-    freeze <- data.frame(data[,except])  # avoid being a vector & couldn't cbind
-    colnames(freeze) <- ori_nms[except]
-    check <- data[,-except]
-  } else {
-    check <- data
-    freeze <- NULL
-  }
-  data <- NULL              # save memory
+  lst <- sep_freeze(data = data,except = except)
+  check <- lst$check ; freeze <- lst$freeze
+  rm(data,lst)                  # save memory
   nms <- colnames(check)
   dtypes <- sapply(check,class)
   counts <- apply(check,2,function(x) length(unique(x)))
   to_fct <- nms[counts<fct_threshold]  # transform to factors
   dt <- nms[dtypes=="Date"] ; chr <- setdiff(nms[dtypes=="character"], to_fct)
-  data <- cbind(freeze,check) %>%
-    mutate_at(vars(all_of(to_fct)), as.factor) %>%
-    {if (date_to_num) mutate_at(.,vars(all_of(dt)), as.numeric)} %>%
-    select(all_of(ori_nms)) %>% # same order as the inputs
-    {if (drop_chr) select(.,!all_of(chr))}
+  data <- check %>%
+    {if (!is.null(freeze)) bind_cols(.,freeze)} %>%  # if no except data, don't cbind
+    mutate_at(vars(all_of(to_fct)), as.factor) %>%   # transform to factor
+    {if (date_to_num) mutate_at(.,vars(all_of(dt)), as.numeric)} %>% # transform to numeric
+    select(all_of(ori_nms)) %>%                      # same order as input data
+    {if (drop_chr) select(.,!all_of(chr))}           # drop chr that didn't transform
   return(data)
 }
 
@@ -147,7 +134,7 @@ data_normalize <- function(data, except=NULL){
 # 6. check number of unique values in each cols:
 unique_count <- function(data){
   invisible(sapply(c("dplyr", "DT"), require, character.only=TRUE))
-  classes <- apply(data,2,class) 
+  classes <- sapply(data,class) 
   counts <- apply(data,2,function(x) length(unique(x)))
   examples <- sapply(apply(data,2,function(x) head(unique(x), 10)),  # keep the first 10 unique values as example
                      function(x) paste(x, collapse = ","))           # combine the vals into one
@@ -159,7 +146,24 @@ unique_count <- function(data){
   
 }
 
-# 7. result tables (accuracy, ....)
+# 7. sep_freeze
+# supply function for other data cleaning functions
+sep_freeze <- function(data,except){
+  nms <- colnames(data)  # colnames
+  if (typeof(except)=="character"){
+    freeze <- data %>% dplyr::select(all_of(except))
+    check <- data %>% dplyr::select(!all_of(except))
+  } else if (typeof(except)=="double" && all.equal(except,round(except))){ # check integer
+    freeze <- data.frame(data[,except])  # avoid being a vector & couldn't cbind
+    colnames(freeze) <- nms[except]
+    check <- data[,-except]
+  } else {
+    check <- data
+    freeze <- NULL
+  }
+  return(list(check=check, freeze=freeze))
+}
+
 
 
 
