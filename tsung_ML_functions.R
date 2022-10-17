@@ -85,22 +85,35 @@ normal_colnames <- function(data, replace_by_dash=FALSE){
 }
 
 # 4. 
-auto_dtype_change <- function(data, chr_to_fct=TRUE, fct_still_fct=TRUE,fct_threshold=Inf, date_to_num=TRUE, drop_chr=TRUE){
+auto_dtype_change <- function(data, except=NULL, fct_threshold=10, date_to_num=TRUE, drop_chr=TRUE){
+  # :param data: data.frame, input data
+  # :param fct_threshold: int, if distinct count< fct_threshold, transform to factor
+  # :param drop_chr: bool, if T drop the remaining chr variables
+  # :param date_to_num: bool, if T transform date dtype to numeric
   invisible(sapply(c("dplyr", "purrr"), require, character.only=TRUE))  # load packages without printing
-  dtypes <- apply(data,2,class)
-  date_nms <- colnames(data)[which(dtypes == "Date")]
-  if (!fct_still_fct) {  # if fct_still_fct=F, check the category count of factor columns
-    cat_idx <- which(dtypes %in% c("character","factor"))
-  } else {               # if fct_still_fct=T, don't change the datatype of var that are already factors
-    cat_idx <- which(dtypes=="character")
+  ori_nms <- colnames(data)  # original colnames
+  if (typeof(except)=="character"){
+    freeze <- data %>% dplyr::select(all_of(except))
+    check <- data %>% dplyr::select(!all_of(except))
+  } else if (typeof(except)=="double" && all.equal(except,round(except))){ # check integer
+    freeze <- data.frame(data[,except])  # avoid being a vector & couldn't cbind
+    colnames(freeze) <- ori_nms[except]
+    check <- data[,-except]
+  } else {
+    check <- data
+    freeze <- NULL
   }
-  class_cnt <- apply(data[,cat_idx],2,function(x) length(unique(x)))  # count of unique classes in each category var
-  cat_nms <- colnames(data)[cat_idx][class_cnt<fct_threshold]
-  chr_nms <- colnames(data)[cat_idx][class_cnt>fct_threshold]
-  data <- data %>%
-    mutate_at(vars(all_of(date_nms)), as.numeric) %>%  # turn date to numeric
-    mutate_at(vars(all_of(cat_nms)), as.factor) %>%    # turn characters to factor
-    {if (drop_chr) select(., !all_of(chr_nms))}        # drop chr cols, 這裡有BUG
+  data <- NULL              # save memory
+  nms <- colnames(check)
+  dtypes <- sapply(check,class)
+  counts <- apply(check,2,function(x) length(unique(x)))
+  to_fct <- nms[counts<fct_threshold]  # transform to factors
+  dt <- nms[dtypes=="Date"] ; chr <- setdiff(nms[dtypes=="character"], to_fct)
+  data <- cbind(freeze,check) %>%
+    mutate_at(vars(all_of(to_fct)), as.factor) %>%
+    {if (date_to_num) mutate_at(.,vars(all_of(dt)), as.numeric)} %>%
+    select(all_of(ori_nms)) %>% # same order as the inputs
+    {if (drop_chr) select(.,!all_of(chr))}
   return(data)
 }
 
@@ -145,9 +158,6 @@ unique_count <- function(data){
   return(datatable(output))
   
 }
-
-
-
 
 # 7. result tables (accuracy, ....)
 
