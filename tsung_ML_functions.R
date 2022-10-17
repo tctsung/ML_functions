@@ -53,13 +53,17 @@ dummy_coding <- function(data, except=NULL){
   freeze <- data.frame(1:nrow(factors)) %>%      # add a redundant col to avoid cbind with null
     {if (!is.null(freeze)) bind_cols(.,freeze)}
   # apply dummy coding on all factor cols:
-  col_lst <- apply(factors, 2, function(col){  
-    vals <- sort(unique(col))                  # get the unique value within col
-    new_cols <- sapply(vals[-1], function(v1) ifelse(col==v1, 1, 0)) # dummy coding without lowest level 
-  })
+  unique_nms <- vector(mode="list")
+  col_lst <- vector(mode="list")
+  for (i in 1:ncol(factors)){
+    vals <- sort(unique(factors[,i]))   # get the unique value within col
+    unique_nms[[i]] <- vals[-1]
+    col_lst[[colnames(factors)[i]]] <- sapply(vals[-1], function(v1) ifelse(col==v1, 1, 0))  # dummy coding without lowest level 
+  }
+
   # change the col names:
   for (i in 1:length(col_lst)){
-    colnames(col_lst[[i]]) <- paste0(names(col_lst)[i], "_", colnames(col_lst[[i]]))
+    colnames(col_lst[[i]]) <- paste0(names(col_lst)[i], "_", unique_nms[[i]])
     freeze <- cbind(freeze, col_lst[[i]])
   }
   return(data.frame(freeze[,-1]))
