@@ -44,29 +44,26 @@ data_partition <- function(data, y, seed=1, prop=0.7, stratified=FALSE, list=TRU
 # :return new_data: data.frame with no factors
 dummy_coding <- function(data, except=NULL){
   invisible(sapply(c("dplyr", "purrr"), require, character.only=TRUE))  # load packages without printing
+  rowc <- nrow(data)
   ori_nms <- colnames(data)  # original colnames
   dtypes <- sapply(data,class)
   if (typeof(except)=="double" && all.equal(except,round(except))) except <- ori_nms[except]
   not_factors <- union(ori_nms[dtypes!="factor"], except)
   lst <- sep_freeze(data = data,except = not_factors) # split the cols into factors & non-factors & except
   factors <- lst$check ; freeze <- lst$freeze
-  freeze <- data.frame(1:nrow(factors)) %>%      # add a redundant col to avoid cbind with null
+  freeze <- data.frame(1:rowc) %>%      # add a redundant col to avoid cbind with null
     {if (!is.null(freeze)) bind_cols(.,freeze)}
   # apply dummy coding on all factor cols:
-  unique_nms <- vector(mode="list")
-  col_lst <- vector(mode="list")
-  for (i in 1:ncol(factors)){
-    vals <- sort(unique(factors[,i]))   # get the unique value within col
-    unique_nms[[i]] <- vals[-1]
-    col_lst[[colnames(factors)[i]]] <- sapply(vals[-1], function(v1) ifelse(col==v1, 1, 0))  # dummy coding without lowest level 
-  }
-
-  # change the col names:
-  for (i in 1:length(col_lst)){
-    colnames(col_lst[[i]]) <- paste0(names(col_lst)[i], "_", unique_nms[[i]])
-    freeze <- cbind(freeze, col_lst[[i]])
-  }
-  return(data.frame(freeze[,-1]))
+  dummys <- lapply(names(factors), function(nm){
+    col <- factors[[nm]]
+    vals <- sort(unique(col))[-1]
+    new_nm <- paste0(nm, "_",vals)
+    list(new_nm, sapply(vals, function(v1) ifelse(col==v1, 1, 0)))
+  })
+  new_nms <- lapply(dummys,function(x) x[[1]]) %>% unlist() # names of dummy cols
+  new_cols <- matrix(lapply(dummys,function(x) x[[2]]) %>% unlist(), nrow=rowc,
+                     dimnames = list(NULL,new_nms))
+  data.frame(freeze[,-1], new_cols)
 }
 
 # 3. remove symbols in column names
