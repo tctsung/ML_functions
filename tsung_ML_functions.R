@@ -100,8 +100,8 @@ auto_dtype_change <- function(data, except=NULL, fct_threshold=10, date_to_num=T
     {if (!is.null(freeze)) bind_cols(.,freeze)} %>%  # if no except data, don't cbind
     mutate_at(vars(all_of(to_fct)), as.factor) %>%   # transform to factor
     {if (date_to_num) mutate_at(.,vars(all_of(dt)), as.numeric)} %>% # transform to numeric
-    select(all_of(ori_nms)) %>%                      # same order as input data
-    {if (drop_chr) select(.,!all_of(chr))}           # drop chr that didn't transform
+    dplyr::select(all_of(ori_nms)) %>%                      # same order as input data
+    {if (drop_chr) dplyr::select(.,!all_of(chr))}           # drop chr that didn't transform
   return(data)
 }
 
@@ -166,7 +166,8 @@ sep_freeze <- function(data,except){
 }
 
 
-
+# auto_relation plots
+# visualization of categorical|continuous outcome vs. two kinds of features
 
 
 
