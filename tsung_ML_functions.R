@@ -4,7 +4,7 @@
 # 1. data_partition
 # 2. dummy_coding
 # 3. normal_colnames
-# 4. auto_dtype_change: drop_chr has bug
+# 4. auto_dtype_change
 # 5. data_normalize
 # 6. unique_count
 
@@ -147,7 +147,7 @@ unique_count <- function(data){
   
 }
 
-# 7. sep_freeze
+## . sep_freeze
 # supply function for other data cleaning functions
 sep_freeze <- function(data,except){
   nms <- colnames(data)  # colnames
