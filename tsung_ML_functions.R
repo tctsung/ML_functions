@@ -1,12 +1,13 @@
 
 # Data tidying functions
 # content of tables:
-# 1. data_partition
+# 1. data_partition (simle version, 1 split)
 # 2. dummy_coding
 # 3. normal_colnames
 # 4. auto_dtype_change
 # 5. data_normalize
 # 6. unique_count
+# 7. data_resample (advanced version, k split with CV|bagging)
 
 
 # 1. This function split data to training and testing set
@@ -165,6 +166,51 @@ sep_freeze <- function(data,except){
   return(list(check=check, freeze=freeze))
 }
 
+# 7. data resampling using bagging or cross validation
+data_resample <- function(x, fold=10, seed=1, method=c("cv", "bagging"), stratified=TRUE, partition_ratio=0.7){
+  require(dplyr)
+  # :param x: vector, input response value for data partition
+  # :param fold: integer; number of folds in CV or number of bagging iterations, default=10
+  # :param method: string, resampling method
+  # :param stratified: logical, stratified the response variable or not
+  # :param partitoin_ratio: numeric; the proportion of data to split when parameter resample=="bagging"
+  # :return idxs: list, index of TESTING data
+  method <- match.arg(method)
+  x <- as.factor(dense_rank(x))   # turn to integer from 1 to k
+  n <- length(x)
+  k <- length(unique(x))
+  idxs <- vector(mode = "list")
+  if (method=="bagging"){
+    if (stratified){
+      for (i in 1:fold) {
+        set.seed(seed+i, kind = "L'Ecuyer-CMRG")
+        idxs[[i]] <- foreach(j = 1:k, .combine = c) %do%      
+          sample(which(x == j),floor(sum(x == j)*(1-partition_ratio)))
+      }
+    } else {
+      test_cnt <- floor((1-partition_ratio)*n)
+      set.seed(seed, kind = "L'Ecuyer-CMRG")
+      idxs <- lapply(1:fold, function(idx) sample(n,test_cnt))
+      
+    }
+  } else{  # CV
+    if (stratified){
+      set.seed(seed, kind = "L'Ecuyer-CMRG")
+      idx <- lapply(1:k, function(i) {
+        neworder <- sample(which(x==i))       # reorder indices in each class
+        split(neworder, f=rep(1:fold,length.out=length(neworder))) # split to folds
+      })   
+      idxs <- lapply(1:fold,function(i) {     # turn to testing indices
+        c(unlist(sapply(idx,function(sub) sub[[i]])))
+      })
+      } else {
+        set.seed(seed, kind = "L'Ecuyer-CMRG")
+        idx <- sample(rep(1:fold, length.out = n))        # resample idx with "fold" kinds at length n
+        idxs <- lapply(1:fold, function(i) which(idx==i)) 
+      }
+  }
+  return(idxs)
+}
 
 # auto_relation plots
 # visualization of categorical|continuous outcome vs. two kinds of features
