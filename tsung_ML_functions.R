@@ -1,13 +1,18 @@
 
 # Data tidying functions
 # content of tables:
-# 1. data_partition (simle version, 1 split)
-# 2. dummy_coding
-# 3. normal_colnames
-# 4. auto_dtype_change
+# 1. data_partition (simple version, 1 split)
+# 2. data_resample (advanced version, support CV & bagging) 
+# 2. data_dummy (dummy coding)
+# 3. data_norm_colnames
+# 4. data_auto_dtype
 # 5. data_normalize
 # 6. unique_count
-# 7. data_resample (advanced version, k split with CV|bagging)
+
+# Machine learning functions
+# content of tables:
+# 1. model_eval (evaluate model performance)
+
 
 
 # 1. This function split data to training and testing set
@@ -43,7 +48,7 @@ data_partition <- function(data, y, seed=1, prop=0.7, stratified=FALSE, list=TRU
 # :param except: vector, the cols that we don't want to do dummy coding. 
 #                If numeric -> read as index, if chr -> read as colname
 # :return new_data: data.frame with no factors
-dummy_coding <- function(data, except=NULL){
+data_dummy <- function(data, except=NULL){
   invisible(sapply(c("dplyr", "purrr"), require, character.only=TRUE))  # load packages without printing
   rowc <- nrow(data)
   ori_nms <- colnames(data)  # original colnames
@@ -82,7 +87,7 @@ normal_colnames <- function(data, replace_by_dash=FALSE){
 }
 
 # 4. 
-auto_dtype_change <- function(data, except=NULL, fct_threshold=10, date_to_num=TRUE, drop_chr=TRUE){
+data_auto_dtype <- function(data, except=NULL, fct_threshold=10, date_to_num=TRUE, drop_chr=TRUE){
   # :param data: data.frame, input data
   # :param fct_threshold: int, if distinct count< fct_threshold, transform to factor
   # :param drop_chr: bool, if T drop the remaining chr variables
@@ -212,10 +217,50 @@ data_resample <- function(x, fold=10, seed=1, method=c("cv", "bagging"), stratif
   return(idxs)
 }
 
+# ML functions:
+
+# 1. model_eval()
+# TO-DO: returns a summary of model performance
+
+
+
+model_eval <- function(y_pred, y_ref, type=c("classification", "regression")){
+  stopifnot(length(y_pred)==length(y_ref)) 
+  type <- match.arg(type)
+  output <- vector("list")
+  if (type="classification"){
+    k = length(unique(y_ref))
+    n = length(y_ref)
+    t1 <- table(prediction=y_pred,reference=y_ref) # confusion matrix
+    wr = colSums(t1);wp = rowSums(t1)          # weight of reference/prediction
+    if (k>2){  # multiclass
+      rc <- sapply(1:k, function(i) t1[i,i]/wr[i])  # sensitivity/recall
+      pc <- sapply(1:k, function(i) t1[i,i]/wp[i])  # precision
+      f1 <- 2*rc*pc/(rc+pc)                         # f1 score
+      mean(f1)      # macro average F1
+      sum(f1*wr/n)  # weighted average F1
+      ex = sum(wr/n*wp/n)     # expectation if independent
+      ag = sum(sapply(1:k, function(i) t1[i,i]))/n  # agreement
+      (ag-ex)/(1-ex)  # kappa
+    } else if (k==2){  # binary
+      
+      
+      
+      
+    }
+  }
+  
+  
+}
+
+
+
 # auto_relation plots
 # visualization of categorical|continuous outcome vs. two kinds of features
 
 
+
+# 
 
 
 
