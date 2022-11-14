@@ -228,22 +228,29 @@ model_eval <- function(y_pred, y_ref, type=c("classification", "regression")){
   stopifnot(length(y_pred)==length(y_ref)) 
   type <- match.arg(type)
   output <- vector("list")
-  if (type="classification"){
+  if (type=="classification"){
+    acc = mean(y_ref == y_pred)
     k = length(unique(y_ref))
     n = length(y_ref)
-    t1 <- table(prediction=y_pred,reference=y_ref) # confusion matrix
-    wr = colSums(t1);wp = rowSums(t1)          # weight of reference/prediction
-    if (k>2){  # multiclass
-      rc <- sapply(1:k, function(i) t1[i,i]/wr[i])  # sensitivity/recall
-      pc <- sapply(1:k, function(i) t1[i,i]/wp[i])  # precision
+    t1 <- table(prediction=y_pred,reference=y_ref)  # confusion matrix
+    wr = colSums(t1);wp = rowSums(t1)               # weight of reference/prediction
+    if (k>2){                                       # multiclass
+      tr <- sapply(1:k, function(i) t1[i,i])        # trace before summation
+      rc <- tr/wr ; pc <- tr/wp                     # recall ; precision
       f1 <- 2*rc*pc/(rc+pc)                         # f1 score
-      mean(f1)      # macro average F1
-      sum(f1*wr/n)  # weighted average F1
-      ex = sum(wr/n*wp/n)     # expectation if independent
+      ex = sum(wr/n*wp/n)                           # expectation if independent
       ag = sum(sapply(1:k, function(i) t1[i,i]))/n  # agreement
-      (ag-ex)/(1-ex)  # kappa
+      cov_xy = n*sum(tr) - sum(wp * wr)                      # MCC numerator
+      cov_xxyy = (n**2 - sum(wp*wp)) * (n**2 - sum(wr*wr))   # MCC denominator^2
+      mcc = cov_xy / sqrt(cov_xxyy)
+      return(c(accuracy=acc, 
+               mcc=mcc,
+               microF1=sum(f1*wr/n),
+               macroF1=mean(f1),
+               kappa=(ag-ex)/(1-ex)
+               ))
     } else if (k==2){  # binary
-      
+      # print, binary classification, use level X as positive
       
       
       
