@@ -4,7 +4,7 @@
 # 1. data_partition (simple version, 1 split)
 # 2. data_resample (advanced version, support CV & bagging) 
 # 2. data_dummy (dummy coding)
-# 3. data_norm_colnames
+# 3. normal_colnames
 # 4. data_auto_dtype
 # 5. data_normalize
 # 6. unique_count
@@ -12,8 +12,8 @@
 # Machine learning functions
 # content of tables:
 # 1. model_eval (evaluate model performance)
-
-
+  # mcc: Matthew’s correlation coefficient
+# 2. modeling: model construction with caret::train
 
 # 1. This function split data to training and testing set
 # return: list with training and testing data OR a vector with the training data index
@@ -222,44 +222,114 @@ data_resample <- function(x, fold=10, seed=1, method=c("cv", "bagging"), stratif
 # 1. model_eval()
 # TO-DO: returns a summary of model performance
 
-
-
-model_eval <- function(y_pred, y_ref, type=c("classification", "regression")){
-  stopifnot(length(y_pred)==length(y_ref)) 
-  type <- match.arg(type)
-  output <- vector("list")
-  if (type=="classification"){
-    acc = mean(y_ref == y_pred)
-    k = length(unique(y_ref))
-    n = length(y_ref)
-    t1 <- table(prediction=y_pred,reference=y_ref)  # confusion matrix
-    wr = colSums(t1);wp = rowSums(t1)               # weight of reference/prediction
-    if (k>2){                                       # multiclass
-      tr <- sapply(1:k, function(i) t1[i,i])        # trace before summation
-      rc <- tr/wr ; pc <- tr/wp                     # recall ; precision
-      f1 <- 2*rc*pc/(rc+pc)                         # f1 score
-      ex = sum(wr/n*wp/n)                           # expectation if independent
-      ag = sum(sapply(1:k, function(i) t1[i,i]))/n  # agreement
-      cov_xy = n*sum(tr) - sum(wp * wr)                      # MCC numerator
-      cov_xxyy = (n**2 - sum(wp*wp)) * (n**2 - sum(wr*wr))   # MCC denominator^2
-      mcc = cov_xy / sqrt(cov_xxyy)
-      return(c(accuracy=acc, 
-               mcc=mcc,
-               microF1=sum(f1*wr/n),
-               macroF1=mean(f1),
-               kappa=(ag-ex)/(1-ex)
-               ))
-    } else if (k==2){  # binary
-      # print, binary classification, use level X as positive
-      
-      
-      
-    }
+mcc <- function(t1){
+  # TO-DO: return the Matthew’s correlation coefficient 
+  # :param t1: table(prediction, reference), the confusion matrix 
+  k = ncol(t1)
+  n = sum(t1)
+  if (n==0) return(NaN)  # if all model infeasible
+  if (k>2){
+    wr = colSums(t1);wp = rowSums(t1)               
+    tr = sapply(1:k, function(i) t1[i,i]) 
+    cov_xy = n*sum(tr) - sum(wp * wr)                      # MCC numerator
+    cov_xxyy = (n**2 - sum(wp*wp)) * (n**2 - sum(wr*wr))   # MCC denominator^2
+    mcc = ifelse(cov_xxyy==0,0, cov_xy / sqrt(cov_xxyy))
+    return(mcc)
+  } else if (k==2){
+    mcc = (t1[1,1]*t1[2,2] - t1[2,1]*t1[1,2])/sqrt(sum(t1[2,])*sum(t1[,2])*sum(t1[,1])*sum(t1[1,]) )
+    return(mcc)
+  } else {
+    warning("The dimension of input table should be >= 2")
   }
+}
+
+# 1. Return multiple values for model evaluation
+# currently only supports classification methods
+model_eval <- function(t1, verbose=FALSE){
+  # :param x: table(prediction, reference), the confusion matrix 
+  # :param verbose: If FALSE, the function will remain silent
+  # Note: Use table instead of y values as input to save computation memories 
+  #       We can do one simple evaluation when resampling
+  n = sum(t1)
+  k = ncol(t1) 
+  wr = colSums(t1);wp = rowSums(t1)               # weight of reference/prediction
+  tr <- sapply(1:k, function(i) t1[i,i])        # trace before summation
+  # Accuracy:
+  acc = sum(tr)/n
+  if (k>2){                                       # multiclass
+    # F1 score calculation
+    rc <- tr/wr ; pc <- tr/wp                     # recall ; precision
+    f1 <- 2*rc*pc/(rc+pc)   
+    # Balanced accuracy:
+    bac <- mean(rc)
+    # MCC calculation:
+    mcc = mcc(t1)
+    # Cohen's kappa calculation:
+    ex = sum(wr/n*wp/n)                           # expectation if independent
+    ag = sum(sapply(1:k, function(i) t1[i,i]))/n  # agreement
+    kp = (ag-ex)/(1-ex)
+    return(c(accuracy=acc, 
+             mcc=mcc,
+             microF1=sum(f1*wr/n),
+             macroF1=mean(f1),
+             kappa=kp,
+             BAC=bac
+    ))
+  } else if (k==2){  # binary
+    if (verbose) cat("Reference group for binary classification", colnames(t1)[1],"\n")
+    rc = tr[2]/wr[2]  # recall
+    pc = tr[1]/wp[2]  # precision
+    bac = (rc+tr[1]/wr[1])/2   # balanced accuracy
+    # gms = sqrt(rc*pc) # G measure
+    f1 = 2*rc*pc/(rc+pc) # f1
+    ex = sum(wr/n*wp/n)                           # expectation if independent
+    ag = sum(sapply(1:k, function(i) t1[i,i]))/n  # agreement
+    kp = (ag-ex)/(1-ex)
+    mcc = mcc(t1)
+    return(c(accuracy=acc, 
+             mcc=mcc,
+             F1=f1,
+             recall=rc,
+             precision=pc,
+             kappa=kp,
+             BAC=bac
+    ))
+  }
+}
   
   
 }
-
+# 2. modeling with caret train function
+modeling <- function(data, classifier, trControl=list(), tuneGrid=list(), seed=1){
+  # ---
+  # :params data: 
+  # :params trControl: list, inputs for resampling in caret::train; default method="none"
+  # :params tuneGrid: list, inputs for hyperparameters tuning in caret::train()
+  # may be very slow for some methods without resetting the hyperparameters | resampling methods
+  # ---
+  # trainControl:
+  trControl <- do.call(trainControl,trControl) 
+  # tuneGrid:
+  if (classifier=="logistic") tuneGrid <- list(alpha=0,lambda=0)       # logistic regression
+  tuneGrid <- do.call(expand.grid, tuneGrid)
+  set.seed(-seed, kind = "L'Ecuyer-CMRG")
+  params <- list(as.formula("y~."), data=data, method=classifier, 
+                 trControl=trControl, tuneGrid=tuneGrid)
+  params <- lapply(params, function(x) if (length(x)!=0) return(x) )
+  params <- params[!sapply(params,is.null)]        # remove trControl & tuneGrid if empty
+  if (classifier=="gbm") {    # silence some classifier
+    params[["verbose"]] <- F
+  } else if (classifier=="xgbTree"){
+    params[["verbosity"]] <- 0
+  }
+  fit <- try(do.call(caret::train, params))
+  if ("try-error" %in% class(fit)) {
+    warning("If you reset any hyperparameter,all required hyperparameters of ",
+            classifier," need to be specified by parameter tuneGrid")
+  } else {
+    return(fit)
+  }
+}
 
 
 # auto_relation plots
