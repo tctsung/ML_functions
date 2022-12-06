@@ -7,7 +7,6 @@
 # 3. normal_colnames
 # 4. data_auto_dtype
 # 5. data_normalize
-# 6. unique_count
 
 # Machine learning functions
 # content of tables:
@@ -236,15 +235,14 @@ mcc <- function(t1){
     mcc = ifelse(cov_xxyy==0,0, cov_xy / sqrt(cov_xxyy))
     return(mcc)
   } else if (k==2){
-    mcc = (t1[1,1]*t1[2,2] - t1[2,1]*t1[1,2])/sqrt(sum(t1[2,])*sum(t1[,2])*sum(t1[,1])*sum(t1[1,]) )
+    # turn sum(t1[2,]) to float -> avoid integer overflow
+    mcc = (t1[1,1]*t1[2,2] - t1[2,1]*t1[1,2])/sqrt(as.numeric(sum(t1[2,]))*sum(t1[,2])*sum(t1[,1])*sum(t1[1,]) )
     return(mcc)
   } else {
     warning("The dimension of input table should be >= 2")
   }
 }
 
-# 1. Return multiple values for model evaluation
-# currently only supports classification methods
 model_eval <- function(t1, verbose=FALSE){
   # :param x: table(prediction, reference), the confusion matrix 
   # :param verbose: If FALSE, the function will remain silent
@@ -253,7 +251,7 @@ model_eval <- function(t1, verbose=FALSE){
   n = sum(t1)
   k = ncol(t1) 
   wr = colSums(t1);wp = rowSums(t1)               # weight of reference/prediction
-  tr <- sapply(1:k, function(i) t1[i,i])        # trace before summation
+  tr = sapply(1:k, function(i) t1[i,i])          # trace before summation
   # Accuracy:
   acc = sum(tr)/n
   if (k>2){                                       # multiclass
@@ -263,41 +261,31 @@ model_eval <- function(t1, verbose=FALSE){
     # Balanced accuracy:
     bac <- mean(rc)
     # MCC calculation:
-    mcc = mcc(t1)
+    mcc_val = mcc(t1)
     # Cohen's kappa calculation:
     ex = sum(wr/n*wp/n)                           # expectation if independent
     ag = sum(sapply(1:k, function(i) t1[i,i]))/n  # agreement
     kp = (ag-ex)/(1-ex)
-    return(c(accuracy=acc, 
-             mcc=mcc,
-             microF1=sum(f1*wr/n),
-             macroF1=mean(f1),
-             kappa=kp,
-             BAC=bac
-    ))
+    output <- c(acc,mcc_val,sum(f1*wr/n),mean(f1),kp, bac)
+    names(output) <- c("accuracy", "mcc", "microF1", "macroF1", "Kappa", "BAC")
+    return(output)
   } else if (k==2){  # binary
     if (verbose) cat("Reference group for binary classification", colnames(t1)[1],"\n")
     rc = tr[2]/wr[2]  # recall
-    pc = tr[1]/wp[2]  # precision
-    bac = (rc+tr[1]/wr[1])/2   # balanced accuracy
+    pc = tr[1]/wp[1]  # precision
+    sp = tr[1]/wr[1]  # specificity
+    bac = (rc+sp)/2   # balanced accuracy
     # gms = sqrt(rc*pc) # G measure
-    f1 = 2*rc*pc/(rc+pc) # f1
+    f1_val = 2*rc*pc/(rc+pc) # f1
     ex = sum(wr/n*wp/n)                           # expectation if independent
     ag = sum(sapply(1:k, function(i) t1[i,i]))/n  # agreement
     kp = (ag-ex)/(1-ex)
-    mcc = mcc(t1)
-    return(c(accuracy=acc, 
-             mcc=mcc,
-             F1=f1,
-             recall=rc,
-             precision=pc,
-             kappa=kp,
-             BAC=bac
-    ))
+    mcc_val = mcc(t1)
+    output <- c(acc,mcc_val,f1_val,rc,pc,sp,kp,bac)
+    names(output) <- c("accuracy", "mcc","F1", "recall", "precision", 
+                       "specificity", "kappa", "BAC")
+    return(output)
   }
-}
-  
-  
 }
 # 2. modeling with caret train function
 modeling <- function(data, classifier, trControl=list(), tuneGrid=list(), seed=1){
